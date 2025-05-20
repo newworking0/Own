@@ -245,19 +245,4 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("mass", mass))
 
     print("Bot started...")
-    app.run_polling()in():
-    updater = Updater(BOT_TOKEN)
-    dp = updater.dispatcher
-
-    dp.add_handler(CommandHandler('start', start))
-    dp.add_handler(CommandHandler('register', register))
-    dp.add_handler(MessageHandler(Filters.regex(r'^(/chk|\.chk)'), check_command))
-    dp.add_handler(CommandHandler('gen', generate_command))
-    dp.add_handler(CommandHandler('bin', bin_command))
-
-    print("Bot is running...")
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == '__main__':
-    main()
+    app.run_polling()
