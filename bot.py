@@ -12,7 +12,7 @@ logging.basicConfig(
 )
 
 # === CONFIGURATION ===
-BOT_TOKEN = "7928470785:AAHMz54GOWoI-NsbD2zyj0Av_VbnqX7fYzI8179218740"
+BOT_TOKEN = "7928470785:AAHMz54GOWoI-NsbD2zyj0Av_VbnqX7fYzI"
 OWNER_ID = 8179218740  # Apka Telegram user id
 
 # Brainthree API credentials
