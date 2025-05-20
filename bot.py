@@ -1,37 +1,28 @@
 import logging
 import time
-import random
-from datetime import datetime
-import braintree
 import requests
-
+from datetime import datetime
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# Configure logging
+# Logging setup
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-# === SETUP ===
-BOT_TOKEN = "7928470785:AAHMz54GOWoI-NsbD2zyj0Av_VbnqX7fYzI"
-OWNER_ID = 8179218740  # Apna Telegram user id daalo yahan
+# === CONFIGURATION ===
+BOT_TOKEN = "7928470785:AAHMz54GOWoI-NsbD2zyj0Av_VbnqX7fYzI8179218740"
+OWNER_ID = 8179218740  # Apka Telegram user id
 
-# BrainTree Gateway setup - apni keys yahan daalo
-gateway = braintree.BraintreeGateway(
-    braintree.Configuration(
-        environment=braintree.Environment.Sandbox,  # ya braintree.Environment.Production
-        merchant_id="q3hwsdcgv5vdxphb",
-        public_key="8c64vknj8d38nznb",
-        private_key="271bf4fb8d331458a307eb3c276b9a26"
-    )
-)
+# Brainthree API credentials
+MERCHANT_ID = "q3hwsdcgv5vdxphb"
+PUBLIC_KEY = "8c64vknj8d38nznb"
+PRIVATE_KEY = "271bf4fb8d331458a307eb3c276b9a26"
 
 # Access control dictionary {user_id: expiry_timestamp}
 access_users = {}
 
-# --------- ACCESS CONTROL --------
 def is_owner(user_id):
     return user_id == OWNER_ID
 
@@ -40,20 +31,17 @@ def is_allowed(user_id):
     expired = [uid for uid, exp in access_users.items() if exp < now]
     for uid in expired:
         del access_users[uid]
-    if is_owner(user_id):
-        return True
-    return user_id in access_users
+    return is_owner(user_id) or user_id in access_users
 
 def restricted(func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         if not is_allowed(user_id):
-            await update.message.reply_text("❌ You don't have access to use this command. Contact owner.")
+            await update.message.reply_text("❌ You don't have access. Contact owner.")
             return
         return await func(update, context)
     return wrapper
 
-# --------- BIN INFO FUNCTION --------
 def get_bin_info(bin_num):
     try:
         r = requests.get(f"https://lookup.binlist.net/{bin_num}")
@@ -71,7 +59,19 @@ def get_bin_info(bin_num):
     except:
         return "Error fetching BIN info."
 
-# --------- /add COMMAND --------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "🔥 Welcome to Brainthree CC Checker Bot 🔥\n\n"
+        "Commands:\n"
+        "/add <user_id> <days> - Add user access (Owner only)\n"
+        "/remove <user_id> - Remove user access (Owner only)\n"
+        "/chk <cc|mm|yy|cvv> - Check a single card\n"
+        "/mass <10 cards> - Check 10 cards at once (cards separated by space or newline)\n\n"
+        "Format: cc|mm|yy|cvv\n"
+        "Contact owner for access if you don't have it."
+    )
+    await update.message.reply_text(text)
+
 async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_owner(user_id):
@@ -87,11 +87,10 @@ async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         expire_time = time.time() + days * 86400
         access_users[uid] = expire_time
         expire_date = datetime.fromtimestamp(expire_time).strftime('%Y-%m-%d %H:%M:%S')
-        await update.message.reply_text(f"✅ User {uid} added for {days} days. Access expires on {expire_date}.")
+        await update.message.reply_text(f"✅ User {uid} added for {days} days. Expires on {expire_date}.")
     except:
         await update.message.reply_text("❌ Invalid user_id or days.")
 
-# --------- /remove COMMAND --------
 async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_owner(user_id):
@@ -111,52 +110,47 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         await update.message.reply_text("❌ Invalid user_id.")
 
-# --------- BrainTree CARD CHECK FUNCTION --------
-def braintree_check_card(cc, mm, yy, cvv):
+def brainthree_check_card(cc, mm, yy, cvv):
+    url = "https://api.brainthree.com/v1/card-check"
+    headers = {
+        "Merchant-ID": MERCHANT_ID,
+        "Public-Key": PUBLIC_KEY,
+        "Private-Key": PRIVATE_KEY,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "card_number": cc,
+        "exp_month": mm,
+        "exp_year": yy,
+        "cvv": cvv
+    }
     try:
-        # Create payment method nonce by tokenizing card
-        result = gateway.payment_method.create({
-            "customer_id": "fake_customer_id_for_testing",  # optional, use if needed
-            "payment_method_nonce": "fake-valid-nonce"  # We'll create nonce below
-        })
-
-        # Instead, we do a simple transaction sale with card info directly (sandbox allows)
-        result = gateway.transaction.sale({
-            "amount": "1.00",
-            "credit_card": {
-                "number": cc,
-                "expiration_month": mm,
-                "expiration_year": yy,
-                "cvv": cvv,
-            },
-            "options": {
-                "submit_for_settlement": False
-            }
-        })
-
-        if result.is_success:
-            return "Approved ✅", "Transaction authorized"
+        res = requests.post(url, json=payload, headers=headers, timeout=30)
+        data = res.json()
+        if data.get("status") == "approved":
+            return "Approved ✅", data.get("message", "Success"), data.get("card_type", None)
         else:
-            message = "; ".join([e.message for e in result.errors.deep_errors]) if result.errors.deep_errors else result.message
-            return "Declined ❌", message
+            return "Declined ❌", data.get("message", "Declined"), None
     except Exception as e:
-        return "Declined ❌", str(e)
+        return "Declined ❌", str(e), None
 
-# --------- /chk COMMAND --------
 @restricted
 async def chk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 1:
         await update.message.reply_text("Usage: /chk <cc|mm|yy|cvv>")
         return
+
+    progress_msg = await update.message.reply_text("Checking... Please wait.")
+
     card = context.args[0]
     try:
         cc, mm, yy, cvv = card.split("|")
     except:
-        await update.message.reply_text("❌ Invalid card format. Use cc|mm|yy|cvv")
+        await progress_msg.edit_text("❌ Invalid card format. Use cc|mm|yy|cvv")
         return
 
     start = time.time()
-    status, resp = braintree_check_card(cc, mm, yy, cvv)
+    status, resp, card_type = brainthree_check_card(cc, mm, yy, cvv)
     end = time.time()
     bin_info = get_bin_info(cc[:6])
 
@@ -164,35 +158,35 @@ async def chk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"CC: {card}\n"
         f"Status: {status}\n"
         f"Response: {resp}\n"
-        f"Gateway: BrainTree\n"
+        f"Gateway: Brainthree\n"
         f"Info: {bin_info}\n"
         f"Time: {round(end-start, 2)}s\n"
         f"Checked by: @{update.effective_user.username or update.effective_user.id}"
     )
-    await update.message.reply_text(msg)
+    await progress_msg.edit_text(msg)
 
-# --------- /mass COMMAND --------
 @restricted
 async def mass(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Usage: /mass <10 cards> (each card in cc|mm|yy|cvv format separated by space or new line)")
+        await update.message.reply_text("Usage: /mass <10 cards> (each card in cc|mm|yy|cvv format separated by space or newline)")
         return
+
+    progress_msg = await update.message.reply_text("Checking 10 cards, please wait...")
+
     raw_input = " ".join(context.args)
     cards = raw_input.strip().splitlines() if "\n" in raw_input else raw_input.strip().split()
     if len(cards) != 10:
-        await update.message.reply_text("❌ Please provide exactly 10 cards.")
+        await progress_msg.edit_text("❌ Please provide exactly 10 cards.")
         return
 
-    await update.message.reply_text("Checking 10 cards, please wait...")
-
-    results = ["↯ BrainTree Auth\n"]
+    results = ["↯ Brainthree Auth\n"]
     start = time.time()
     for card in cards:
         try:
             cc, mm, yy, cvv = card.strip().split("|")
-            status, resp = braintree_check_card(cc, mm, yy, cvv)
+            status, resp, card_type = brainthree_check_card(cc, mm, yy, cvv)
             results.append(
-                f"Card↯ {card}\nStatus - {status}\nResult - {resp}\n"
+                f"Card↯ {card}\nStatus - {status}\nResult - ⤿ {resp} ⤾\n"
             )
         except:
             results.append(f"❌ Invalid format: {card}\n")
@@ -200,13 +194,13 @@ async def mass(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     results.append(f"\nChecked by: @{update.effective_user.username or update.effective_user.id}\nTime taken: {round(end - start, 2)} seconds")
 
-    await update.message.reply_text("\n".join(results))
+    await progress_msg.edit_text("\n".join(results))
 
-# ===== Main =====
+
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Add handlers
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add", add_user))
     app.add_handler(CommandHandler("remove", remove_user))
     app.add_handler(CommandHandler("chk", chk))
