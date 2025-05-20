@@ -19,7 +19,7 @@ BOT_TOKEN = "7928470785:AAHMz54GOWoI-NsbD2zyj0Av_VbnqX7fYzI"
 OWNER_ID = 8179218740  # Apna telegram user id daalo yahan
 
 # Stripe secret key - apni key yahan daalo
-stripe.api_key = "sk_test_YOUR_STRIPE_SECRET_KEY"
+stripe.api_key = "sk_test_51RQinfIOi20W3Z306gPLrw998n2Isxh3OgRqCl59MlNDZU9jQ3l4gKmHj7fOWoNSZjnLktvj650ISUYIf4C1Qfcb000uvGoYwE"
 
 # Access control dictionary {user_id: expiry_timestamp}
 access_users = {}
